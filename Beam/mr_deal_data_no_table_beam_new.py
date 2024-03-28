@@ -4,6 +4,7 @@ import inspect
 import math
 import os
 import re
+import sys
 import time
 import zipfile
 from datetime import datetime
@@ -13,7 +14,6 @@ import pandas as pd
 import pytz
 from matplotlib import pyplot as plt
 from pyproj import Transformer
-from sklearn.decomposition import PCA
 
 
 class Config:
@@ -60,6 +60,14 @@ class Config:
         except configparser.NoOptionError as e:
             print_error(f'获取 {self.data_type} 45g_table_file时报错：{e}')
             exit()
+
+    # def get_table_file(self):
+    #     try:
+    #         in_table_file = self.config.get(self.data_type, '45g_table_file')
+    #         return in_table_file
+    #     except configparser.NoOptionError as e:
+    #         print_error(f'获取 {self.data_type} 45g_table_file时报错：{e}')
+    #         exit()
 
     def get_char_file(self):
         try:
@@ -262,6 +270,10 @@ class Time:
         in_df[in_column] = in_df['tmp'].dt.strftime('%Y-%m-%d %H:%M:%S.%f')
         return in_df
 
+    # # 时间戳转日期
+    # @staticmethod
+    # def convert_timestamp_to_datetime(timestamp):
+    #     return [datetime.fromtimestamp(x / 1000).strftime('%Y-%m-%d %H:%M:%S.%f') for x in timestamp]
     # 时间戳转日期
     @staticmethod
     def convert_timestamp_to_datetime(timestamp):
@@ -360,17 +372,6 @@ class WeTest:
         except UnicodeEncodeError as e:
             print_with_line_number(f'error, 输出char文件名时报错：{e}')
         tmp_zcy_df = Common.read_csv_get_df(in_char_file)
-
-        # 旋转纠偏和水平纠偏
-        print_with_line_number('开始旋转纠偏')
-        x1, y1 = CommonFunc.cov_x_y_to_real_x_y(tmp_zcy_df['x'], tmp_zcy_df['y'])
-        # 水平平移纠偏
-        print_with_line_number('开始水平纠偏')
-        x1_1, y1_1 = CommonFunc.move_xy_to_real_xy(x1, y1, 800, 600)
-
-        tmp_zcy_df['x'] = x1_1
-        tmp_zcy_df['y'] = y1_1
-
         if 'direction' in tmp_zcy_df.columns:
             print_with_line_number('读取zcy direction数据')
             tmp_zcy_df = tmp_zcy_df[
@@ -586,6 +587,14 @@ class DealUEMR:
                 ['test_time', 'created_by_ue_time', 'x', 'y', 'altitude']]
 
         in_zcy_df = in_deal_data.deal_zcy_char_csv_file(tmp_zcy_df)
+
+        # tmp_zcy_df = tmp_zcy_df.drop(columns=['f_direction'])
+
+        # in_uemr_df['f_longitude'] = in_zcy_df['f_longitude']
+        # in_uemr_df['f_latitude'] = in_zcy_df['f_latitude']
+        # in_uemr_df['f_altitude'] = in_zcy_df['altitude']
+        # in_uemr_df['f_x'] = in_zcy_df['f_x']
+        # in_uemr_df['f_y'] = in_zcy_df['f_y']
         # 获取前时间前十位
         in_zcy_df['created_by_ue_time'] = Common.get_top_ten_data(in_zcy_df['created_by_ue_time'])
         # in_zcy_df['created_by_ue_time'] = in_uemr_df['f_time']
@@ -837,16 +846,6 @@ class WalkTour:
 
         tmp_zcy_df = Common.read_csv_get_df(in_char_file)
 
-        # 旋转纠偏和水平纠偏
-        print_with_line_number('开始旋转纠偏')
-        x1, y1 = CommonFunc.cov_x_y_to_real_x_y(tmp_zcy_df['x'], tmp_zcy_df['y'])
-        # 水平平移纠偏
-        print_with_line_number('开始水平纠偏')
-        x1_1, y1_1 = CommonFunc.move_xy_to_real_xy(x1, y1, 800, 600)
-
-        tmp_zcy_df['x'] = x1_1
-        tmp_zcy_df['y'] = y1_1
-
         if 'direction' in tmp_zcy_df.columns:
             print_with_line_number('读取zcy direction数据')
             tmp_zcy_df = tmp_zcy_df[
@@ -925,17 +924,6 @@ class WalkTour:
             return
 
         tmp_zcy_df = Common.read_csv_get_df(in_char_file)
-
-        # 旋转纠偏和水平纠偏
-        print_with_line_number('开始旋转纠偏')
-        x1, y1 = CommonFunc.cov_x_y_to_real_x_y(tmp_zcy_df['x'], tmp_zcy_df['y'])
-        # 水平平移纠偏
-        print_with_line_number('开始水平纠偏')
-        x1_1, y1_1 = CommonFunc.move_xy_to_real_xy(x1, y1, 800, 600)
-
-        tmp_zcy_df['x'] = x1_1
-        tmp_zcy_df['y'] = y1_1
-
         if 'direction' in tmp_zcy_df.columns:
             print_with_line_number('读取zcy direction数据')
             tmp_zcy_df = tmp_zcy_df[
@@ -980,6 +968,108 @@ class WalkTour:
         print_with_line_number(f"走测仪test_time为：{in_zcy_df['ts'][0]}")
         tmp_df = pd.merge(in_ue_df, in_zcy_df, how='left')
         return tmp_df
+
+    @staticmethod
+    def deal_5g_df_data_new_forma(log_df_5g, in_wifi_flag=False):
+        # 删除测试log中 秒级重复数据，同秒取第一条
+        # log_df_5g = log_df_5g.groupby(log_df_5g['ts']).first().reset_index()  # 删除测试log中 秒级重复数据，同秒取第一条。
+
+        pattern = re.compile(r'NCell(\d)(\d)')
+        # 使用正则表达式匹配并替换列名
+        log_df_5g.columns = [pattern.sub(lambda x: f'NCell{x.group(1)}', col) for col in log_df_5g.columns]
+
+        i = 0
+        while True:
+            i += 1
+            if f'NCell{i} -Beam NARFCN' in log_df_5g.columns:
+                log_df_5g = log_df_5g.rename(
+                    columns={
+                        f'NCell{i} -Beam NARFCN': f'f_freq_n{i}',
+                        f'NCell{i} -Beam PCI': f'f_pci_n{i}',
+                        f'NCell{i} -Beam SS-RSRP': f'f_rsrp_n{i}',
+                        f'NCell{i} -Beam SS-RSRQ': f'f_rsrq_n{i}',
+                        f'NCell{i} -Beam SS-SINR': f'f_sinr_n{i}',
+                    })
+            else:
+                break
+
+        # 设置beam
+        cnt = 0
+        while True:
+            if f'SSB Beam ID{cnt} RSRP' in log_df_5g.columns:
+                log_df_5g = log_df_5g.rename(
+                    columns={
+                        f'SSB Beam ID{cnt} RSRP': f'f_sid_{cnt}_rsrp',
+                        f'SSB Beam ID{cnt} RSRQ': f'f_sid_{cnt}_rsrq',
+                        f'SSB Beam ID{cnt} SINR': f'f_sid_{cnt}_sinr',
+                    })
+            else:
+                break
+            cnt += 1
+
+        log_df_5g = log_df_5g.rename(
+            columns={
+                'Serv SSB Beam ID': 'f_server_sid',
+                'IMSI': 'f_imsi',
+                'IMEI': 'f_imei',
+                'NCI': 'f_cell_id',
+                'ts': 'f_time',
+                'NR PCI': 'f_pci',
+                'SSB ARFCN': 'f_freq',
+                'SS-RSRP': 'f_rsrp',
+                'SS-RSRQ': 'f_rsrq',
+                'SS-SINR': 'f_sinr',
+                'PC Time': 'pc_time',
+            })
+
+        # 重命名zcy数据
+        log_df_5g = log_df_5g.rename(
+            columns={
+                'altitude': 'f_altitude',
+                'direction': 'f_direction',
+            })
+
+        if 'f_longitude' not in log_df_5g.columns:
+            log_df_5g = log_df_5g.rename(
+                columns={
+                    'Longitude': 'f_longitude',
+                    'Latitude': 'f_latitude',
+                })
+
+        # 删除重复行
+        log_df_5g = Common.delete_duplicate_columns(log_df_5g)
+
+        # 时间转上海时区
+        sh_timez = Common.change_time_zone(log_df_5g['f_time'])
+        log_df_5g['f_time_1'] = sh_timez
+        # 生成finger_id
+        finger_id = Common.generate_finger_id(log_df_5g['f_time_1'], log_df_5g['f_msisdn'])
+        log_df_5g['finger_id'] = finger_id
+        # 置空 UEMR 数据
+        log_df_5g = Common.fill_in_empty_header(log_df_5g)
+
+        log_df_5g['f_imsi'] = np.array(log_df_5g['f_imsi'])
+        log_df_5g['f_gnb_id'] = log_df_5g['f_cell_id'] // 4096
+        # SID暂时都赋值1
+        log_df_5g['f_sid'] = 1
+        log_df_5g['f_pid'] = (log_df_5g.index + 1).astype(str)
+        log_df_5g[['f_year', 'f_month', 'f_day']] = log_df_5g['f_time'].apply(
+            Time.convert_seconds_to_datetime_day_year_month).to_list()
+        log_df_5g['f_eci'] = log_df_5g['f_cell_id']
+
+        if in_wifi_flag:
+            out_data_table = OutDataTableFormat.WalkTour5G_wifi_bluetooth + OutDataTableFormat.WIFI_BlueTooth
+        else:
+            out_data_table = OutDataTableFormat.WalkTour5G_beam
+
+        log_df_5g = log_df_5g.reindex(columns=out_data_table)
+        # 获取领区数
+        num_list = Common.get_cell_number(log_df_5g)
+        log_df_5g['f_neighbor_cell_number'] = num_list
+        Common.data_filling(log_df_5g, 'f_cell_id')
+
+        log_df_5g = log_df_5g.rename(str.lower, axis='columns')
+        return log_df_5g
 
     @staticmethod
     def deal_5g_df_data(log_df_5g, in_wifi_flag=False):
@@ -1055,7 +1145,7 @@ class WalkTour:
         log_df_5g['f_eci'] = log_df_5g['f_cell_id']
 
         if in_wifi_flag:
-            out_data_table = OutDataTableFormat.WalkTour5G + OutDataTableFormat.WIFI_BlueTooth
+            out_data_table = OutDataTableFormat.WalkTour5G_wifi_bluetooth + OutDataTableFormat.WIFI_BlueTooth
         else:
             out_data_table = OutDataTableFormat.WalkTour5G
 
@@ -1200,138 +1290,6 @@ class CommonFunc:
             lon_list[i], lat_list[i] = CommonFunc.transform_utm_to_gps(x_list_utm[i], y_list_utm[i])
         return lon_list, lat_list
 
-    @staticmethod
-    def find_square_edges(points):
-        # 应用PCA
-        pca = PCA(n_components=1)  # 我们只需要第一个主成分
-        pca.fit(points)
-
-        # 得到第一个主成分方向
-        component = pca.components_[0]
-
-        # 计算该方向与x轴正方向之间的夹角
-        angle = np.arctan2(component[1], component[0])
-
-        # 旋转反向得到垂直于长边的斜率k
-        slope = -1 / np.tan(angle)
-
-        # 计算长边的截距b
-        # 取所有点在第一个主成分方向上的投影的平均值来估计中心位置，
-        # 然后计算中心点在垂直方向上的截距
-        center_projection = pca.transform(pca.mean_.reshape(1, -1))[0][0]
-        intercept = pca.mean_[1] - slope * pca.mean_[0]
-
-        return slope, intercept
-
-    @staticmethod
-    def LineFit(x, y):
-        points = np.zeros((len(x), 2), dtype=np.float64)
-        for i in range(len(x)):
-            points[i][0] = x[i]
-            points[i][1] = y[i]
-        k, b = CommonFunc.find_square_edges(points)
-        return k, b
-
-    @staticmethod
-    def get_vector_degree(vector1, vector2):
-        cos_angle = vector1.dot(vector2) / (np.linalg.norm(vector1) * np.linalg.norm(vector2))
-        degree = math.degrees(math.acos(cos_angle))
-        return degree
-
-    # 顺时针旋转
-    @staticmethod
-    def S_rotate(angle, in_x, in_y, point_x, point_y):
-        in_x = np.array(in_x)
-        in_y = np.array(in_y)
-        sRotate_x = (in_x - point_x) * math.cos(angle) + (in_y - point_y) * math.sin(angle) + point_x
-        sRotate_y = (in_y - point_y) * math.cos(angle) - (in_x - point_x) * math.sin(angle) + point_y
-        return sRotate_x, sRotate_y
-
-    # 逆时针旋转
-    @staticmethod
-    def N_rotate(angle, in_x, in_y, point_x, point_y):
-        in_x = np.array(in_x)
-        in_y = np.array(in_y)
-        sRotate_x = (in_x - point_x) * math.cos(angle) - (in_y - point_y) * math.sin(angle) + point_x
-        sRotate_y = (in_x - point_x) * math.sin(angle) + (in_y - point_y) * math.cos(angle) + point_y
-        return sRotate_x, sRotate_y
-
-    @staticmethod
-    def rotate_point_by_radian(x, y, radian, is_s):
-        if is_s:
-            x, y = CommonFunc.S_rotate(radian, x, y, 0.0, 0.0)
-        else:
-            x, y = CommonFunc.N_rotate(radian, x, y, 0.0, 0.0)
-        return x, y
-
-    @staticmethod
-    def rotate_point_by_angle(x, y, angle, is_s):
-        # 将角度转换为弧度
-        radian = math.radians(angle)
-        return CommonFunc.rotate_point_by_radian(x, y, radian, is_s)
-
-    @staticmethod
-    def cov_x_y_to_real_x_y(x_list, y_list):
-        # 校正基准向量
-        list_base = [0.0, 1.0]
-        vector2 = np.array(list_base)
-        k, b = CommonFunc.LineFit(x_list, y_list)
-        list_to = [1, k]
-        vector1 = np.array(list_to)
-        degree = CommonFunc.get_vector_degree(vector2, vector1)
-        if degree < 90:
-            degree = 90 - degree
-            ans = CommonFunc.rotate_point_by_angle(x_list, y_list, degree, True)
-        elif degree == 90:
-            return x_list, y_list
-        else:
-            degree = degree - 90
-            ans = CommonFunc.rotate_point_by_angle(x_list, y_list, degree, False)
-        return ans[0], ans[1]
-
-    @staticmethod
-    def data_conversion(in_value, df_data):
-        delta_d = df_data.max() - df_data.min()
-        t_x = in_value / delta_d
-        n_values = df_data * t_x
-        res_dat = n_values - n_values.min()
-        return res_dat
-
-    @staticmethod
-    def find_center(points):
-
-        # 检测方向 - 使用PCA来找到数据的主方向
-        pca = PCA(n_components=2)  # 我们要检测到二维数据集的两个主成分
-        pca.fit(points)
-
-        # 得到旋转后的坐标系中的点的坐标
-        transformed_points = pca.transform(points)
-
-        # 在新坐标系中计算中心点
-        center_point_transformed = np.mean(transformed_points, axis=0)
-
-        # 将中心点坐标转换回原来的坐标系
-        center_point = pca.inverse_transform(center_point_transformed)
-
-        return center_point
-
-    @staticmethod
-    def move_xy_to_real_xy(x_list, y_list, center_need_x, center_need_y):
-        points = np.zeros((len(x_list), 2), dtype=np.float64)
-        for i in range(len(x_list)):
-            points[i][0] = x_list[i]
-            points[i][1] = y_list[i]
-        center_point = CommonFunc.find_center(points)
-        # 剩下的就简单了，中心点和中心点需要的位置都知道了，那么就可以直接平移了
-        x_out = np.zeros((len(x_list)), dtype=np.float64)
-        y_out = np.zeros((len(x_list)), dtype=np.float64)
-        x_move = center_need_x - center_point[0]
-        y_move = center_need_y - center_point[1]
-        for i in range(len(x_list)):
-            x_out[i] = x_list[i] + x_move
-            y_out[i] = y_list[i] + y_move
-        return x_out, y_out
-
 
 class OutDataTableFormat:
     WalkTour4G = ['finger_id', 'f_province', 'f_city', 'f_district', 'f_street',
@@ -1349,6 +1307,51 @@ class OutDataTableFormat:
                   'f_rsrq_n8', 'f_year', 'f_month', 'f_day', 'pc_time', 'f_x', 'f_y',
                   'f_sid', 'f_pid', 'f_direction', 'f_source', 'f_device_brand',
                   'f_device_model']
+
+    WalkTour5G_wifi_bluetooth = ['finger_id', 'f_province', 'f_city', 'f_district', 'f_street',
+                                 'f_building', 'f_floor', 'f_area', 'f_prru_id', 'f_scenario',
+                                 'f_roaming_type', 'f_imsi', 'f_imei', 'f_msisdn', 'f_cell_id',
+                                 'f_gnb_id', 'f_time', 'f_longitude', 'f_latitude', 'f_altitude',
+                                 'f_phr', 'f_enb_received_power', 'f_ta', 'f_aoa', 'f_pci',
+                                 'f_freq', 'f_rsrp', 'f_rsrq', 'f_sinr', 'f_neighbor_cell_number', 'f_freq_n1',
+                                 'f_pci_n1', 'f_freq_n2', 'f_pci_n2', 'f_freq_n3', 'f_pci_n3',
+                                 'f_freq_n4', 'f_pci_n4', 'f_freq_n5', 'f_pci_n5', 'f_freq_n6',
+                                 'f_pci_n6', 'f_freq_n7', 'f_pci_n7', 'f_freq_n8', 'f_pci_n8',
+                                 'f_rsrp_n1', 'f_rsrq_n1', 'f_sinr_n1', 'f_rsrp_n2', 'f_rsrq_n2', 'f_sinr_n2',
+                                 'f_rsrp_n3',
+                                 'f_rsrq_n3', 'f_sinr_n3', 'f_rsrp_n4', 'f_rsrq_n4', 'f_sinr_n4', 'f_rsrp_n5',
+                                 'f_rsrq_n5',
+                                 'f_sinr_n5',
+                                 'f_rsrp_n6', 'f_rsrq_n6', 'f_sinr_n6', 'f_rsrp_n7', 'f_rsrq_n7', 'f_sinr_n7',
+                                 'f_rsrp_n8',
+                                 'f_rsrq_n8', 'f_sinr_n8', 'f_year', 'f_month', 'f_day', 'pc_time', 'f_x', 'f_y',
+                                 'f_sid', 'f_pid', 'f_direction', 'f_source', 'f_device_brand',
+                                 'f_device_model']
+
+    WalkTour5G_beam = ['finger_id', 'f_province', 'f_city', 'f_district', 'f_street',
+                       'f_building', 'f_floor', 'f_area', 'f_prru_id', 'f_scenario',
+                       'f_roaming_type', 'f_imsi', 'f_imei', 'f_msisdn', 'f_cell_id',
+                       'f_gnb_id', 'f_time', 'f_longitude', 'f_latitude', 'f_altitude',
+                       'f_phr', 'f_enb_received_power', 'f_ta', 'f_aoa', 'f_pci',
+                       'f_freq', 'f_server_sid', 'f_sid_0_rsrp', 'f_sid_0_rsrq', 'f_sid_0_sinr',
+                       'f_sid_1_rsrp', 'f_sid_1_rsrq', 'f_sid_1_sinr',
+                       'f_sid_2_rsrp', 'f_sid_2_rsrq', 'f_sid_2_sinr',
+                       'f_sid_3_rsrp', 'f_sid_3_rsrq', 'f_sid_3_sinr',
+                       'f_sid_4_rsrp', 'f_sid_4_rsrq', 'f_sid_4_sinr',
+                       'f_sid_5_rsrp', 'f_sid_5_rsrq', 'f_sid_5_sinr',
+                       'f_sid_6_rsrp', 'f_sid_6_rsrq', 'f_sid_6_sinr',
+                       'f_sid_7_rsrp', 'f_sid_7_rsrq', 'f_sid_7_sinr',
+                       'f_neighbor_cell_number', 'f_freq_n1',
+                       'f_pci_n1', 'f_freq_n2', 'f_pci_n2', 'f_freq_n3', 'f_pci_n3',
+                       'f_freq_n4', 'f_pci_n4', 'f_freq_n5', 'f_pci_n5', 'f_freq_n6',
+                       'f_pci_n6', 'f_freq_n7', 'f_pci_n7', 'f_freq_n8', 'f_pci_n8',
+                       'f_rsrp_n1', 'f_rsrq_n1', 'f_sinr_n1', 'f_rsrp_n2', 'f_rsrq_n2', 'f_sinr_n2', 'f_rsrp_n3',
+                       'f_rsrq_n3', 'f_sinr_n3', 'f_rsrp_n4', 'f_rsrq_n4', 'f_sinr_n4', 'f_rsrp_n5', 'f_rsrq_n5',
+                       'f_sinr_n5',
+                       'f_rsrp_n6', 'f_rsrq_n6', 'f_sinr_n6', 'f_rsrp_n7', 'f_rsrq_n7', 'f_sinr_n7', 'f_rsrp_n8',
+                       'f_rsrq_n8', 'f_sinr_n8', 'f_year', 'f_month', 'f_day', 'pc_time', 'f_x', 'f_y',
+                       'f_sid', 'f_pid', 'f_direction', 'f_source', 'f_device_brand',
+                       'f_device_model']
 
     WalkTour5G = ['finger_id', 'f_province', 'f_city', 'f_district', 'f_street',
                   'f_building', 'f_floor', 'f_area', 'f_prru_id', 'f_scenario',
@@ -1560,10 +1563,10 @@ class Common:
             n_are = 'DaXin'
         # print(district)
         if in_n_scene:
-            tmp_out_file_name = f'{in_net_type}_{n_are}_{in_n_scene}_{in_test_type}_LOG_DT_UE_{name_d_time}'
+            tmp_out_file_name = f'Beam_{in_net_type}_{n_are}_{in_n_scene}_{in_test_type}_LOG_DT_UE_{name_d_time}'
             # tmp_out_file_name = f'{in_net_type}_{n_are}_{in_n_scene}_{in_test_type}_LOG_DT_UE_{n_dev_id}_{name_d_time}'
         else:
-            tmp_out_file_name = f'{in_net_type}_{n_are}_{in_test_type}_LOG_DT_UE_{name_d_time}'
+            tmp_out_file_name = f'Beam_{in_net_type}_{n_are}_{in_test_type}_LOG_DT_UE_{name_d_time}'
             # tmp_out_file_name = f'{in_net_type}_{n_are}_{in_test_type}_LOG_DT_UE_{n_dev_id}_{name_d_time}'
 
         tmp_out_file = os.path.join(in_data_path, tmp_out_file_name)
@@ -1722,6 +1725,12 @@ class Common:
     def df_write_to_csv(w_df, w_file):
         w_df.to_csv(w_file, index=False)
 
+    # @staticmethod
+    # def delete_df_duplicate_data_by_second(df_dta, g_df):
+    #     print_with_line_number('当前关闭，同秒取第一条数据功能')
+    # df_dta = df_dta.groupby(g_df).first().reset_index()  # 删除测试log中 秒级重复数据，同秒取第一条。
+    # return df_dta
+
 
 class FTPHelper:
     def __init__(self, host='116.6.50.82', username='dingliftp', password='dingliftp2023-2024', port=21):
@@ -1734,11 +1743,17 @@ class FTPHelper:
     def connect(self):
         self.ftp.connect(self.host, self.port, timeout=5)
         self.ftp.login(self.username, self.password)
+        # except error_perm as e:
+        #     print_error('error')
+        # # self.ftp.connect(self.host, self.port)
 
     def reconnect(self):
         self.ftp.close()
         self.ftp.connect(self.host, self.port)
         self.ftp.login(self.username, self.password)
+
+    # def _login(self):
+    #     self.ftp.login(self.username, self.password)
 
     def ftp_upload(self, in_local_file, in_save_dir=r'/var/www/html/walkingindoor_data/MR'):
         self.ftp.cwd(in_save_dir)
@@ -1746,6 +1761,9 @@ class FTPHelper:
         with open(in_local_file, 'rb') as file:
             # 上传文件到远程服务器
             self.ftp.storbinary(f'STOR {tmp_res_list[-1]}', file)
+
+        # # 关闭FTP连接
+        # self.ftp.quit()
 
 
 class DealData:
@@ -1755,6 +1773,9 @@ class DealData:
         self.lat = self.config.get_lat_value()
         self.x = self.config.get_len_x_value()
         self.y = self.config.get_len_y_value()
+
+    def set_config(self, in_config):
+        self.config = in_config
 
     def deal_wifi_bluetooth_csv_file(self, in_wifi_bluetooth_file):
         zcy_path = os.path.join(os.path.dirname(in_wifi_bluetooth_file), 'zcy_data')
@@ -1803,6 +1824,25 @@ class DealData:
 
         return res_char_data
 
+    # def deal_zcy_char_csv_file(self, char_df):
+    #     res_x1_values = Common.data_conversion(self.x, char_df['x'])
+    #     lon = res_x1_values / (111000 * math.cos(self.lon / 180 * math.pi)) + self.lon
+    #     lon = 2 * max(lon) - lon
+    #
+    #     res_y1_values = Common.data_conversion(self.y, char_df['y'])
+    #     lat = res_y1_values / 111000 + self.lat
+    #
+    #     char_df['f_x'] = res_x1_values
+    #     char_df['f_y'] = res_y1_values
+    #     char_df['f_longitude'] = lon
+    #     char_df['f_latitude'] = lat
+    #
+    #     # 删除列
+    #     columns_to_delete = ['x', 'y']
+    #     res_char_data = char_df.drop(columns_to_delete, axis=1)
+    #
+    #     return res_char_data
+
     def get_wifi_bluetooth_data(self):
         print_with_line_number('获取wifi 蓝牙数据')
         # 获取char数据
@@ -1820,17 +1860,6 @@ class DealData:
         print_with_line_number(f'获取char数据：{in_char_file}')
         # 读取所有的zcy数据
         tmp_zcy_df = Common.read_csv_get_df(in_char_file)
-
-        # 旋转纠偏和水平纠偏
-        print_with_line_number('开始旋转纠偏')
-        x1, y1 = CommonFunc.cov_x_y_to_real_x_y(tmp_zcy_df['x'], tmp_zcy_df['y'])
-        # 水平平移纠偏
-        print_with_line_number('开始水平纠偏')
-        x1_1, y1_1 = CommonFunc.move_xy_to_real_xy(x1, y1, 800, 600)
-
-        tmp_zcy_df['x'] = x1_1
-        tmp_zcy_df['y'] = y1_1
-
         # 读取char数据中的某些列
         if 'direction' in tmp_zcy_df.columns:
             print_with_line_number('读取zcy direction数据')
@@ -1905,6 +1934,10 @@ class DealData:
                 columns={
                     'direction': 'f_direction',
                 })
+        # 筛选出特定的列
+        # print_with_line_number()
+        # out_data_table = OutDataTableFormat.WIFIBlueToothDataOut
+        # res_wifi_bluetooth_df = res_wifi_bluetooth_df.reindex(columns=out_data_table)
 
         # 生成输出文件名称
         print_with_line_number('----step 3:输出df数据为csv文件----')
@@ -1969,7 +2002,12 @@ class DealData:
             zcy_ue_merge_df = WalkTour.deal_4g_df_data(zcy_ue_merge_df)
         elif 'NR' == net_type or 'ENDC' == net_type:
             net_type = '5G'
-            zcy_ue_merge_df = WalkTour.deal_5g_df_data(zcy_ue_merge_df)
+            if 'indoor' == n_scene:
+                print_with_line_number('5G 室内数据，设置beam信息')
+                zcy_ue_merge_df = WalkTour.deal_5g_df_data_new_forma(zcy_ue_merge_df)
+            else:
+                print_with_line_number('5G 室外，不设置beam信息')
+                zcy_ue_merge_df = WalkTour.deal_5g_df_data(zcy_ue_merge_df)
 
         # 生成输出文件名称
         out_file = Common.generate_output_file_name(cur_path_output, zcy_ue_merge_df, net_type, n_scene, 'WT')
@@ -1992,6 +2030,7 @@ class DealData:
 
     def deal_wetest(self):
         print_with_line_number('----开始处理wetest数据----')
+        # 判断生成数据类型
 
         # 生成输出目录
         cur_path_output = os.path.join(os.path.dirname(self.config.get_ue_file()), 'output')
@@ -2217,7 +2256,6 @@ if __name__ == '__main__':
             else:
                 break
 
-        # 读取配置文件
         config_project = Config(demo_config_file)
         deal_data = DealData(config_project)
         if 'WalkTour' == config_project.data_type:
