@@ -1,10 +1,20 @@
 # -*- coding: utf-8 -*-
+# 读取多个值，以逗号分隔
 import datetime
 import inspect
-import os
+import os.path
 
-import numpy as np
 import pandas as pd
+
+
+def read_csv_get_df(in_df_path):
+    if 'csv' in in_df_path:
+        # print('csv文件')
+        in_df = pd.read_csv(in_df_path, low_memory=False)
+    else:
+        # print('其他文件')
+        in_df = pd.read_excel(in_df_path)
+    return in_df
 
 
 def df_write_to_csv(w_df, w_file):
@@ -16,6 +26,10 @@ def print_with_line_number(message, in_file):
     current_line = inspect.currentframe().f_back.f_lineno
     # 使用 f-string 格式化字符串，包含文件名和行号信息
     print(f"{os.path.basename(in_file)}:{current_line} - {message}")
+
+
+def convert_datetime_to_seconds(dtime):
+    return [round(int(datetime.datetime.strptime(x, "%y-%m-%d %H:%M:%S.%f").timestamp() * 1e3) / 1e3) for x in dtime]
 
 
 def data_column_extension(in_df, in_group_flag, in_columns_list):
@@ -75,10 +89,87 @@ def data_line_extension(in_df, in_columns_flag):
     return new_df
 
 
-def convert_datetime_to_seconds(dtime):
-    return [round(int(datetime.datetime.strptime(x, "%y-%m-%d %H:%M:%S.%f").timestamp() * 1e3) / 1e3) for x in dtime]
-    # return [int((datetime.datetime.strptime(x, "%y-%m-%d %H:%M:%S.%f") - datetime.datetime(1970, 1, 1)).total_seconds())
-    #         for x in dtime]
+def lte_stand_df(in_df):
+    in_df = in_df.rename(
+        columns={
+            'UE Time': 'pc_time',
+        })
+
+    in_df = in_df.rename(
+        columns={
+            'ARFCN': 'f_freq_4g_n1',
+            'PCI': 'f_pci_4g_n1',
+            'RSRP': 'f_rsrp_4g_n1',
+            'RSRQ': 'f_rsrq_4g_n1',
+        })
+
+    # 列重命名
+    i = 0
+    while True:
+        i += 1
+        if f'ARFCN{i}' in in_df.columns:
+            in_df = in_df.rename(
+                columns={
+                    f'ARFCN{i}': f'f_freq_4g_n{i + 1}',
+                    f'PCI{i}': f'f_pci_4g_n{i + 1}',
+                    f'RSRP{i}': f'f_rsrp_4g_n{i + 1}',
+                    f'RSRQ{i}': f'f_rsrq_4g_n{i + 1}',
+                })
+        else:
+            break
+
+    heterogeneous_system_data = ['pc_time', 'f_time', 'f_freq_4g_n1', 'f_pci_4g_n1', 'f_rsrp_4g_n1',
+                                 'f_rsrq_4g_n1', 'f_freq_4g_n2', 'f_pci_4g_n2', 'f_rsrp_4g_n2',
+                                 'f_rsrq_4g_n2', 'f_freq_4g_n3', 'f_pci_4g_n3', 'f_rsrp_4g_n3',
+                                 'f_rsrq_4g_n3', 'f_freq_4g_n4', 'f_pci_4g_n4', 'f_rsrp_4g_n4',
+                                 'f_rsrq_4g_n4', 'f_freq_4g_n5', 'f_pci_4g_n5', 'f_rsrp_4g_n5',
+                                 'f_rsrq_4g_n5', 'f_freq_4g_n6', 'f_pci_4g_n6', 'f_rsrp_4g_n6',
+                                 'f_rsrq_4g_n6', 'f_freq_4g_n7', 'f_pci_4g_n7', 'f_rsrp_4g_n7',
+                                 'f_rsrq_4g_n7', 'f_freq_4g_n8', 'f_pci_4g_n8', 'f_rsrp_4g_n8',
+                                 'f_rsrq_4g_n8']
+
+    in_df = in_df.reindex(columns=heterogeneous_system_data)
+
+    return in_df
+
+
+def lte_extension(in_data_file):
+    print_with_line_number(f'开始处理4G数据', __file__)
+    # 数据读取和清理
+    df = pd.read_csv(in_data_file, low_memory=False, usecols=['UE Time', 'ARFCN', 'PCI.1', 'RSRP.1', 'RSRQ.1'],
+                     encoding='utf-8')
+
+    df.rename(columns={'PCI.1': 'PCI', 'RSRP.1': 'RSRP', 'RSRQ.1': 'RSRQ', }, inplace=True)
+    df = df.dropna(subset=['ARFCN', 'PCI', 'RSRP', 'RSRQ'], how='any').reset_index(drop=True)
+
+    df['f_time'] = convert_datetime_to_seconds(df['UE Time'])
+    columns_list = ['ARFCN', 'PCI', 'RSRP', 'RSRQ']
+    # 列拓展
+    df = data_column_extension(df, 'f_time', columns_list)
+
+    # 列拓展
+    df = data_line_extension(df, 'f_time')
+
+    # 标准化输出
+    df = lte_stand_df(df)
+    # 删除列
+    # df = df.drop(columns='UE Time')
+
+    return df
+
+
+def res_csv_file_get_df(in_data_file):
+    try:
+        in_df = pd.read_csv(in_data_file, low_memory=False, encoding='utf-8')
+    except UnicodeDecodeError:
+        in_df = pd.read_csv(in_data_file, low_memory=False, encoding='gbk')
+
+    # 将第一行数据作为新的列名，并重新设置索引
+    if 'NARFCN' not in in_df.columns and 'EARFCN' not in in_df.columns:
+        in_df.columns = in_df.iloc[0]
+        in_df = in_df[1:].reset_index(drop=True)
+
+    df_write_to_csv(in_df, in_data_file)
 
 
 def nr_stand_df(in_df):
@@ -126,89 +217,6 @@ def nr_stand_df(in_df):
     in_df = in_df.reindex(columns=heterogeneous_system_data)
 
     return in_df
-
-
-def lte_stand_df(in_df):
-    in_df = in_df.rename(
-        columns={
-            'UE Time': 'pc_time',
-        })
-
-    in_df = in_df.rename(
-        columns={
-            'ARFCN': 'f_freq_4g_n1',
-            'PCI': 'f_pci_4g_n1',
-            'RSRP': 'f_rsrp_4g_n1',
-            'RSRQ': 'f_rsrq_4g_n1',
-        })
-
-    # 列重命名
-    i = 0
-    while True:
-        i += 1
-        if f'ARFCN{i}' in in_df.columns:
-            in_df = in_df.rename(
-                columns={
-                    f'ARFCN{i}': f'f_freq_4g_n{i + 1}',
-                    f'PCI{i}': f'f_pci_4g_n{i + 1}',
-                    f'RSRP{i}': f'f_rsrp_4g_n{i + 1}',
-                    f'RSRQ{i}': f'f_rsrq_4g_n{i + 1}',
-                })
-        else:
-            break
-
-    heterogeneous_system_data = ['pc_time', 'f_time', 'f_freq_4g_n1', 'f_pci_4g_n1', 'f_rsrp_4g_n1',
-                                 'f_rsrq_4g_n1', 'f_freq_4g_n2', 'f_pci_4g_n2', 'f_rsrp_4g_n2',
-                                 'f_rsrq_4g_n2', 'f_freq_4g_n3', 'f_pci_4g_n3', 'f_rsrp_4g_n3',
-                                 'f_rsrq_4g_n3', 'f_freq_4g_n4', 'f_pci_4g_n4', 'f_rsrp_4g_n4',
-                                 'f_rsrq_4g_n4', 'f_freq_4g_n5', 'f_pci_4g_n5', 'f_rsrp_4g_n5',
-                                 'f_rsrq_4g_n5', 'f_freq_4g_n6', 'f_pci_4g_n6', 'f_rsrp_4g_n6',
-                                 'f_rsrq_4g_n6', 'f_freq_4g_n7', 'f_pci_4g_n7', 'f_rsrp_4g_n7',
-                                 'f_rsrq_4g_n7', 'f_freq_4g_n8', 'f_pci_4g_n8', 'f_rsrp_4g_n8',
-                                 'f_rsrq_4g_n8']
-
-    in_df = in_df.reindex(columns=heterogeneous_system_data)
-
-    return in_df
-
-
-def res_csv_file_get_df(in_data_file):
-    try:
-        in_df = pd.read_csv(in_data_file, low_memory=False, encoding='utf-8')
-    except UnicodeDecodeError:
-        in_df = pd.read_csv(in_data_file, low_memory=False, encoding='gbk')
-
-    # 将第一行数据作为新的列名，并重新设置索引
-    if 'NARFCN' not in in_df.columns and 'EARFCN' not in in_df.columns:
-        in_df.columns = in_df.iloc[0]
-        in_df = in_df[1:].reset_index(drop=True)
-
-    df_write_to_csv(in_df, in_data_file)
-
-
-def lte_extension(in_data_file):
-    print_with_line_number(f'开始处理4G数据', __file__)
-    # 数据读取和清理
-    df = pd.read_csv(in_data_file, low_memory=False, usecols=['UE Time', 'ARFCN', 'PCI.1', 'RSRP.1', 'RSRQ.1'],
-                     encoding='utf-8')
-
-    df.rename(columns={'PCI.1': 'PCI', 'RSRP.1': 'RSRP', 'RSRQ.1': 'RSRQ', }, inplace=True)
-    df = df.dropna(subset=['ARFCN', 'PCI', 'RSRP', 'RSRQ'], how='any').reset_index(drop=True)
-
-    df['f_time'] = convert_datetime_to_seconds(df['UE Time'])
-    columns_list = ['ARFCN', 'PCI', 'RSRP', 'RSRQ']
-    # 列拓展
-    df = data_column_extension(df, 'f_time', columns_list)
-
-    # 列拓展
-    df = data_line_extension(df, 'f_time')
-
-    # 标准化输出
-    df = lte_stand_df(df)
-    # 删除列
-    # df = df.drop(columns='UE Time')
-
-    return df
 
 
 def nr_extension(in_data_file):
@@ -319,31 +327,61 @@ def deal_mr_data(in_data_file):
 
 
 if __name__ == '__main__':
-    # data_file = r'G:\MrData\0326\20240326\xiaomi_13\NR_MR_Detail_20240326141517.csv'
+    out_flag = False
+
     while True:
-        data_file = input("请输入csv文件（使用绝对路径）或者输入out退出：")
+        file_list = []
+        cnt = 0
+        while True:
+            file = input("请输入需要合并的csv文件名然后回车（使用绝对路径）,输入out退出整个程序：")
 
-        if '"' in data_file:
-            # 去除字符串两端的引号
-            data_file = data_file.strip('"')
+            if '"' in file:
+                # 去除字符串两端的引号
+                file = file.strip('"')
 
-        if 'out' == data_file:
+            if 'out' == file.lower():
+                out_flag = True
+                break
+
+            if os.path.exists(file):
+                cnt += 1
+
+                file_list.append(file)
+                if cnt >= 2:
+                    break
+            else:
+                print('**' * 50)
+                print('输入的csv文件不存在请重新输入，输入out退出整个程序')
+
+        if out_flag:
             break
 
-        # res_df = pd.read_csv(data_file, low_memory=False)
-        # 删除csv的第一行不需要的数据
-        res_csv_file_get_df(data_file)
+        df_list = []
 
-        res_df = pd.read_csv(data_file, low_memory=False, encoding='utf-8')
+        finger_file = ''
+        mr_file = ''
+        print(f"输入的文件名为：")
+        for i_f in file_list:
+            print(i_f)  # 使用strip()方法去除值两端的空白字符
+            if 'finger' in i_f:
 
-        if 'NARFCN' in res_df.columns:
-            lte_res_df = lte_extension(data_file)
-            nr_res_df = nr_extension(data_file)
-            tmp_merger_df = pd.merge(lte_res_df, nr_res_df, left_on="f_time",
-                                     right_on="f_time")
-        else:
-            tmp_merger_df = only_lte_extension(data_file)
+                finger_file = i_f
+                tmp_merger_df = read_csv_get_df(i_f)
+            elif i_f:
+                mr_file = i_f
+        print(f'指纹数据为：{finger_file}')
+        print(f'MR数据为：{mr_file}')
 
-        out_file = data_file.replace('.csv', '_mr_data_expand.csv')
-        print_with_line_number(f'输出文件：{out_file}', __file__)
+        # 处理mr数据
+        mr_df = deal_mr_data(mr_file)
+
+        print("开始merge数据")
+        tmp_merger_df = pd.merge(read_csv_get_df(finger_file), mr_df,
+                                 left_on="f_time", right_on="f_time", how='left')
+
+        # out_dir = os.path.join(os.path.dirname(finger_file), 'output')
+        # out_file = out_dir + os.path.basename(finger_file).replace('.csv', '_mr_data_merge.csv')
+        out_file = finger_file.replace('.csv', '_mr_data_merge.csv')
         df_write_to_csv(tmp_merger_df, out_file)
+        print(f'输出文件为：{out_file}')
+        print('---' * 50)
