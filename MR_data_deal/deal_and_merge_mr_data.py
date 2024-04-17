@@ -92,11 +92,6 @@ def data_line_extension(in_df, in_columns_flag):
 def lte_stand_df(in_df):
     in_df = in_df.rename(
         columns={
-            'UE Time': 'pc_time',
-        })
-
-    in_df = in_df.rename(
-        columns={
             'ARFCN': 'f_freq_4g_n1',
             'PCI': 'f_pci_4g_n1',
             'RSRP': 'f_rsrp_4g_n1',
@@ -118,7 +113,7 @@ def lte_stand_df(in_df):
         else:
             break
 
-    heterogeneous_system_data = ['pc_time', 'f_time', 'f_freq_4g_n1', 'f_pci_4g_n1', 'f_rsrp_4g_n1',
+    heterogeneous_system_data = ['f_time', 'f_freq_4g_n1', 'f_pci_4g_n1', 'f_rsrp_4g_n1',
                                  'f_rsrq_4g_n1', 'f_freq_4g_n2', 'f_pci_4g_n2', 'f_rsrp_4g_n2',
                                  'f_rsrq_4g_n2', 'f_freq_4g_n3', 'f_pci_4g_n3', 'f_rsrp_4g_n3',
                                  'f_rsrq_4g_n3', 'f_freq_4g_n4', 'f_pci_4g_n4', 'f_rsrp_4g_n4',
@@ -175,11 +170,6 @@ def res_csv_file_get_df(in_data_file):
 def nr_stand_df(in_df):
     in_df = in_df.rename(
         columns={
-            'UE Time': 'pc_time',
-        })
-
-    in_df = in_df.rename(
-        columns={
             'NARFCN': 'f_freq_5g_n1',
             'PCI': 'f_pci_5g_n1',
             'RSRP': 'f_rsrp_5g_n1',
@@ -203,7 +193,7 @@ def nr_stand_df(in_df):
         else:
             break
 
-    heterogeneous_system_data = ['pc_time', 'f_time', 'f_freq_5g_n1', 'f_pci_5g_n1', 'f_rsrp_5g_n1', 'f_sinr_5g_n1',
+    heterogeneous_system_data = ['f_time', 'f_freq_5g_n1', 'f_pci_5g_n1', 'f_rsrp_5g_n1', 'f_sinr_5g_n1',
                                  'f_rsrq_5g_n1', 'f_freq_5g_n2', 'f_pci_5g_n2', 'f_rsrp_5g_n2',
                                  'f_sinr_5g_n2', 'f_rsrq_5g_n2', 'f_freq_5g_n3', 'f_pci_5g_n3',
                                  'f_rsrp_5g_n3', 'f_sinr_5g_n3', 'f_rsrq_5g_n3', 'f_freq_5g_n4',
@@ -267,7 +257,7 @@ def only_lte_stand_df(in_df):
         else:
             break
 
-    heterogeneous_system_data = ['UE Time', 'f_time', 'f_freq_4g_n1', 'f_pci_4g_n1', 'f_rsrp_4g_n1',
+    heterogeneous_system_data = ['f_time', 'f_freq_4g_n1', 'f_pci_4g_n1', 'f_rsrp_4g_n1',
                                  'f_rsrq_4g_n1', 'f_freq_4g_n2', 'f_pci_4g_n2', 'f_rsrp_4g_n2',
                                  'f_rsrq_4g_n2', 'f_freq_4g_n3', 'f_pci_4g_n3',
                                  'f_rsrp_4g_n3', 'f_rsrq_4g_n3', 'f_freq_4g_n4',
@@ -300,7 +290,7 @@ def only_lte_extension(in_data_file):
     in_df = only_lte_stand_df(in_df)
 
     # 删除列
-    in_df = in_df.drop(columns='UE Time')
+    # in_df = in_df.drop(columns='UE Time')
 
     return in_df
 
@@ -363,8 +353,7 @@ if __name__ == '__main__':
         print(f"输入的文件名为：")
         for i_f in file_list:
             print(i_f)  # 使用strip()方法去除值两端的空白字符
-            if 'finger' in i_f:
-
+            if 'finger' in i_f or 'uemr' in i_f:
                 finger_file = i_f
                 tmp_merger_df = read_csv_get_df(i_f)
             elif i_f:
@@ -375,13 +364,25 @@ if __name__ == '__main__':
         # 处理mr数据
         mr_df = deal_mr_data(mr_file)
 
-        print("开始merge数据")
-        tmp_merger_df = pd.merge(read_csv_get_df(finger_file), mr_df,
-                                 left_on="f_time", right_on="f_time", how='left')
+        finger_df = read_csv_get_df(finger_file)
+
+        if 'u_sinr' in finger_df.columns or 'u_longitude' in finger_df.columns:
+            mr_df.rename(columns=lambda x: x.replace('f_', 'u_'), inplace=True)
+
+            print_with_line_number("开始merge数据", __file__)
+            tmp_merger_df = pd.merge(finger_df, mr_df,
+                                     left_on="u_time", right_on="u_time", how='left')
+        else:
+            print_with_line_number("开始merge数据", __file__)
+            tmp_merger_df = pd.merge(finger_df, mr_df,
+                                     left_on="f_time", right_on="f_time", how='left')
 
         # out_dir = os.path.join(os.path.dirname(finger_file), 'output')
         # out_file = out_dir + os.path.basename(finger_file).replace('.csv', '_mr_data_merge.csv')
         out_file = finger_file.replace('.csv', '_mr_data_merge.csv')
-        df_write_to_csv(tmp_merger_df, out_file)
+        try:
+            df_write_to_csv(tmp_merger_df, out_file)
+        except PermissionError as e:
+            print_with_line_number(f'写文件报错：{e}', __file__)
         print(f'输出文件为：{out_file}')
         print('---' * 50)

@@ -1567,7 +1567,7 @@ class Common:
                 nsinr_name = 'u_sinr_n%d' % (i)
                 if npci_name in _r and not pd.isnull(_r[npci_name]):
                     pci = int(_r[npci_name])
-                    if nfreq_name in _r:
+                    if nfreq_name in _r and not pd.isnull(_r[nfreq_name]):
                         freq = int(_r[nfreq_name])
                         if nsinr_name in _r:
                             val = [_r[nrsrp_name], _r[nrsrq_name], _r[nsinr_name]]
@@ -1624,7 +1624,7 @@ class Common:
                 nsinr_name = 'u_sinr_4g_n%d' % (i)
                 if npci_name in _r and not pd.isnull(_r[npci_name]):
                     pci = int(_r[npci_name])
-                    if nfreq_name in _r:
+                    if nfreq_name in _r and not pd.isnull(_r[nfreq_name]):
                         freq = int(_r[nfreq_name])
                         if nsinr_name in _r:
                             val = [_r[nrsrp_name], _r[nrsrq_name], _r[nsinr_name]]
@@ -1680,7 +1680,7 @@ class Common:
                 nsinr_name = 'u_sinr_5g_n%d' % (i)
                 if npci_name in _r and not pd.isnull(_r[npci_name]):
                     pci = int(_r[npci_name])
-                    if nfreq_name in _r:
+                    if nfreq_name in _r and not pd.isnull(_r[nfreq_name]):
                         freq = int(_r[nfreq_name])
                         if nsinr_name in _r:
                             val = [_r[nrsrp_name], _r[nrsrq_name], _r[nsinr_name]]
@@ -2050,6 +2050,7 @@ class Common:
             in_df = in_df.dropna(subset=['u_longitude', 'u_latitude', 'u_pci', 'u_freq', 'u_rsrp', 'u_rsrq', 'u_sinr'],
                            how='any')
             # 同秒合并
+            print_with_line_number('uemr数据，开始同秒合并')
             in_df = Common.do_one_second(in_df)
         elif 'f_longitude' in in_df.columns and 'f_sinr' not in in_df.columns:
             print_with_line_number(f'清理 4G finger 数据')
@@ -2058,6 +2059,7 @@ class Common:
             print_with_line_number(f'清理 4G UEMR 数据')
             in_df = in_df.dropna(subset=['u_longitude', 'u_latitude', 'u_pci', 'u_freq', 'u_rsrp', 'u_rsrq'], how='any')
             # 同秒合并
+            print_with_line_number('uemr数据，开始同秒合并')
             in_df = Common.do_one_second(in_df)
         print('---' * 50)
         return in_df
